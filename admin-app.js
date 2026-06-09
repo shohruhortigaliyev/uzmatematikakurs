@@ -77,7 +77,7 @@
           <div style="margin-top:8px;color:var(--muted, #9aa)">Savollar: ${qCount} — Turi: ${escapeHtml(
             test.type || "",
           )}</div>
-          <div style="margin-top:10px;display:flex;gap:8px"><button class="btn" onclick="editTest('${test.id}')">Tahrirlash</button><button class="btn ghost" onclick="deleteTest('${test.id}')">O'chirish</button></div>
+          <div style="margin-top:10px;display:flex;gap:8px"><button class="btn" onclick="editTest(${test.id})">Tahrirlash</button><button class="btn ghost" onclick="deleteTest(${test.id})">O'chirish</button></div>
         </div>`;
       })
       .join("");
@@ -108,8 +108,8 @@
             <span>O'rtacha: ${stats.avgScore}%</span>
           </div>
           <div class="user-actions">
-            <button class="btn ghost" onclick="editUser('${user.id}')">Tahrirlash</button>
-            <button class="btn ghost" onclick="deleteUser('${user.id}')">O'chirish</button>
+            <button class="btn ghost" onclick="editUser(${user.id})">Tahrirlash</button>
+            <button class="btn ghost" onclick="deleteUser(${user.id})">O'chirish</button>
           </div>
         </div>`;
       })
@@ -230,7 +230,7 @@
       return;
     }
     const testPayload = {
-      id: editingTestId === null ? String(Date.now()) : String(editingTestId),
+      id: editingTestId === null ? Date.now() : editingTestId,
       name,
       time,
       type,
@@ -273,8 +273,7 @@
       } else {
         if (
           users.some(
-            (item) =>
-              item.login === login && String(item.id) !== String(editingUserId),
+            (item) => item.login === login && item.id !== editingUserId,
           )
         ) {
           alert("Bu login allaqachon boshqa foydalanuvchiga tegishli");
@@ -316,7 +315,7 @@
   };
 
   window.editUser = function (id) {
-    const user = users.find((item) => String(item.id) === String(id));
+    const user = users.find((item) => item.id === id);
     if (!user) {
       alert("Foydalanuvchi topilmadi");
       return;
@@ -324,7 +323,7 @@
     editingUserId = user.id;
     el("uFullname").value = user.fullname;
     el("uLogin").value = user.login;
-    el("uPassword").value = "";
+    el("uPassword").value = user.password || "";
     el("uStatus").value = user.status;
     el("userPanelTitle").textContent = "Foydalanuvchini tahrirlash";
     el("userPanel").style.display = "block";
@@ -442,21 +441,47 @@
     }
   }
 
-  // Admin login is handled on the login page; require local session flag
+  window.doLogin = async function () {
+    const login = el("loginInput").value.trim();
+    const pass = el("passInput").value.trim();
+    const errorEl = el("loginError");
+    if (!login || !pass) {
+      errorEl.textContent = "Login va parolni kiriting";
+      return;
+    }
+    if (!window.api || !window.api.adminLogin) {
+      errorEl.textContent = "Servisga ulanish imkoni yo'q.";
+      return;
+    }
+    try {
+      const res = await window.api.adminLogin(login, pass);
+      if (!res || !res.ok) {
+        errorEl.textContent = "Login yoki parol noto‘g‘ri";
+        return;
+      }
+      el("loginOverlay").style.display = "none";
+      el("adminLayout").style.display = "flex";
+      await init();
+    } catch (error) {
+      errorEl.textContent = "Tizimda xatolik yuz berdi";
+      console.error(error);
+    }
+  };
 
   window.doLogout = function () {
-    localStorage.removeItem("admin_logged_in");
-    localStorage.removeItem("admin_key");
-    window.location.href = "index.html";
+    if (window.api && window.api.clearAdminSession) {
+      window.api.clearAdminSession();
+    }
+    location.reload();
   };
 
   document.addEventListener("DOMContentLoaded", () => {
-    const ok = localStorage.getItem("admin_logged_in");
-    if (!ok) {
-      window.location.href = "index.html";
-      return;
+    const session =
+      window.api && window.api.getAdminSession && window.api.getAdminSession();
+    if (session) {
+      el("loginOverlay").style.display = "none";
+      el("adminLayout").style.display = "flex";
+      init();
     }
-    // admin session exists
-    init();
   });
 })();

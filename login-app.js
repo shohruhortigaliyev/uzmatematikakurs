@@ -1,4 +1,19 @@
-﻿/* Login app using window.api (Supabase) for auth */
+﻿/* Login app for admin and users with localStorage account management */
+const DEFAULT_ADMIN = { login: "admin", pass: "12345" };
+const ALT_ADMIN = { login: "admin", pass: "admin123" };
+
+function readUsers() {
+  try {
+    return JSON.parse(localStorage.getItem("users") || "[]");
+  } catch (e) {
+    return [];
+  }
+}
+
+function writeUsers(users) {
+  localStorage.setItem("users", JSON.stringify(users));
+}
+
 function getInput(id) {
   return document.getElementById(id).value.trim();
 }
@@ -51,36 +66,91 @@ function loginUser() {
   const pass = getInput("userPass");
   if (!login) return showError("userError", "Loginni kiriting!");
   if (!pass) return showError("userError", "Parolni kiriting!");
-  if (!window.api || !window.api.loginUser) {
-    return showError(
-      "userError",
-      "Tizim bilan bog'lanib bo'lmadi. Iltimos qaytadan urining.",
-    );
-  }
-  window.api
-    .loginUser(login, pass)
-    .then((res) => {
-      if (res && res.ok && res.user) {
-        const u = res.user;
+  // Try backend login first
+  if (window.api) {
+    window.api
+      .loginUser(login, pass)
+      .then((res) => {
+        if (res && res.ok) {
+          const u = res.user;
+          localStorage.setItem(
+            "current_user",
+            JSON.stringify({
+              id: u.id,
+              fullname: u.name || u.fullname || u.code,
+              login: u.code,
+            }),
+          );
+          showSuccess("userError", "✅ Muvaffaqiyatli kirildi!");
+          setTimeout(() => (window.location.href = "bosh-sahifa.html"), 600);
+        } else {
+          // fallback to local
+          const users = readUsers();
+          const user = users.find(
+            (item) => item.login === login && item.password === pass,
+          );
+          if (!user)
+            return showError("userError", "Login yoki parol noto‘g‘ri!");
+          localStorage.setItem(
+            "current_user",
+            JSON.stringify({
+              id: user.id,
+              fullname: user.fullname,
+              login: user.login,
+              status: user.status,
+              createdAt: user.createdAt,
+            }),
+          );
+          showSuccess("userError", "✅ Muvaffaqiyatli kirildi!");
+          setTimeout(() => (window.location.href = "bosh-sahifa.html"), 600);
+        }
+      })
+      .catch(() => {
+        const users = readUsers();
+        const user = users.find(
+          (item) => item.login === login && item.password === pass,
+        );
+        if (!user) return showError("userError", "Login yoki parol noto‘g‘ri!");
         localStorage.setItem(
           "current_user",
           JSON.stringify({
-            id: u.id,
-            fullname: u.fullname || u.name || u.code,
-            login: u.login || u.code,
-            status: u.status || "",
+            id: user.id,
+            fullname: user.fullname,
+            login: user.login,
+            status: user.status,
+            createdAt: user.createdAt,
           }),
         );
         showSuccess("userError", "✅ Muvaffaqiyatli kirildi!");
         setTimeout(() => (window.location.href = "bosh-sahifa.html"), 600);
-      } else {
-        showError("userError", "Login yoki parol noto‘g‘ri!");
-      }
-    })
-    .catch((err) => {
-      console.error(err);
-      showError("userError", "Tizim bilan bog'lanishda xatolik yuz berdi");
-    });
+      });
+    return;
+  }
+
+  // local fallback (should rarely run now)
+  const users = readUsers();
+  const user = users.find(
+    (item) => item.login === login && item.password === pass,
+  );
+  if (!user) {
+    return showError("userError", "Login yoki parol noto‘g‘ri!");
+  }
+
+  localStorage.setItem(
+    "current_user",
+    JSON.stringify({
+      id: user.id,
+      fullname: user.fullname,
+      login: user.login,
+      status: user.status,
+      createdAt: user.createdAt,
+    }),
+  );
+
+  showSuccess("userError", "✅ Muvaffaqiyatli kirildi!");
+  setTimeout(() => {
+    window.location.href = "bosh-sahifa.html";
+  }, 600);
 }
 
 function loginAdmin() {
@@ -88,28 +158,61 @@ function loginAdmin() {
   const pass = getInput("adminPass");
   if (!login) return showError("adminError", "Loginni kiriting!");
   if (!pass) return showError("adminError", "Parolni kiriting!");
-  if (!window.api || !window.api.adminLogin) {
-    return showError(
-      "adminError",
-      "Tizim bilan bog'lanib bo'lmadi. Iltimos qaytadan urining.",
-    );
+  // Try backend admin login
+  if (window.api) {
+    window.api
+      .adminLogin(pass)
+      .then((res) => {
+        if (res && res.ok && res.admin_key) {
+          localStorage.setItem("admin_logged_in", "true");
+          localStorage.setItem("admin_key", res.admin_key);
+          showSuccess("adminError", "✅ Admin paneliga kirildi!");
+          setTimeout(() => (window.location.href = "admin.html"), 600);
+        } else {
+          // fallback local check
+          const creds =
+            JSON.parse(localStorage.getItem("adminCreds") || "null") ||
+            DEFAULT_ADMIN;
+          const okAdmin =
+            (login === creds.login && pass === creds.pass) ||
+            (login === ALT_ADMIN.login && pass === ALT_ADMIN.pass);
+          if (okAdmin) {
+            localStorage.setItem("admin_logged_in", "true");
+            showSuccess("adminError", "✅ Admin paneliga kirildi!");
+            setTimeout(() => (window.location.href = "admin.html"), 600);
+          } else showError("adminError", "Login yoki parol noto'g'ri!");
+        }
+      })
+      .catch(() => {
+        const creds =
+          JSON.parse(localStorage.getItem("adminCreds") || "null") ||
+          DEFAULT_ADMIN;
+        const okAdmin =
+          (login === creds.login && pass === creds.pass) ||
+          (login === ALT_ADMIN.login && pass === ALT_ADMIN.pass);
+        if (okAdmin) {
+          localStorage.setItem("admin_logged_in", "true");
+          showSuccess("adminError", "✅ Admin paneliga kirildi!");
+          setTimeout(() => (window.location.href = "admin.html"), 600);
+        } else showError("adminError", "Login yoki parol noto'g'ri!");
+      });
+    return;
   }
-  window.api
-    .adminLogin(login, pass)
-    .then((res) => {
-      if (res && res.ok) {
-        localStorage.setItem("admin_logged_in", "true");
-        if (res.admin_key) localStorage.setItem("admin_key", res.admin_key);
-        showSuccess("adminError", "✅ Admin paneliga kirildi!");
-        setTimeout(() => (window.location.href = "admin.html"), 600);
-      } else {
-        showError("adminError", "Login yoki parol noto'g'ri!");
-      }
-    })
-    .catch((err) => {
-      console.error(err);
-      showError("adminError", "Tizim bilan bog'lanishda xatolik yuz berdi");
-    });
+
+  const creds =
+    JSON.parse(localStorage.getItem("adminCreds") || "null") || DEFAULT_ADMIN;
+  const okAdmin =
+    (login === creds.login && pass === creds.pass) ||
+    (login === ALT_ADMIN.login && pass === ALT_ADMIN.pass);
+  if (okAdmin) {
+    localStorage.setItem("admin_logged_in", "true");
+    showSuccess("adminError", "✅ Admin paneliga kirildi!");
+    setTimeout(() => {
+      window.location.href = "admin.html";
+    }, 600);
+  } else {
+    showError("adminError", "Login yoki parol noto'g'ri!");
+  }
 }
 
 document.addEventListener("keydown", (e) => {
@@ -125,4 +228,24 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("DOMContentLoaded", () => {
   switchTab("user");
   document.getElementById("userLogin").focus();
+});
+
+// Ensure demo user exists so demo credentials on index.html work without edits
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    const users = readUsers();
+    if (!users.some((u) => u.login === "00-913")) {
+      users.push({
+        id: Date.now(),
+        fullname: "Demo Foydalanuvchi",
+        login: "00-913",
+        password: "123456",
+        status: "Faol",
+        createdAt: new Date().toLocaleString(),
+      });
+      writeUsers(users);
+    }
+  } catch (e) {
+    // ignore
+  }
 });
